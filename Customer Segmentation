@@ -1,0 +1,351 @@
+# **Customer Segmentation Analysis**
+
+Content :
+
+* Objectives
+* Data Gathering
+* Code Preparation
+* Raw Data Preparation
+* Data Cleaning
+* Exploratory Data Analysis
+* Cluster Analysis
+* Insight & Reccomendation
+* References
+
+## **Import Libraries**
+
+import pandas as pd                # to perform advanced data analysis, import data quickly
+import numpy as np                 # to perform arge mahematical operations and statistical operation
+import matplotlib.pyplot as plt    # to perform simple interactive visualization
+import plotly.express as px        # to perform visualization with more interactive
+import seaborn as sns              # to perform visualization with many color palettes, beatifull style and many statistical plots
+
+from datetime import datetime      # to perform manipulating dates and times
+
+# Silhouette Library
+from sklearn import cluster
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.datasets import make_blobs
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_samples, silhouette_score
+import matplotlib.cm as cm
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+## **Import Data**
+
+# Read csv file
+# df_cluster = pd.read_csv('/content/drive/MyDrive/Labs/Milestone 2/CrediU Clustering New.csv')
+df_cluster = pd.read_csv('/content/drive/MyDrive/Labs/Milestone 2/baru.csv')
+pd.set_option('display.max.columns',None)   
+
+df_cluster
+
+## **Data Cleaning**
+
+Let's deep dive into each of the dataset.
+
+Our missions here are :
+- Handling missing data
+- Handling typos values
+- Handling duplicates
+- Handling outliers
+- String manipulation
+- Timeseries manipulation
+- Combining dataset
+
+#Rename Kuliah - Perguruan Tinggi to Sarjana
+df_cluster['education'] = df_cluster['education'].replace('Kuliah - Perguruan Tinggi', 'Sarjana')
+df_cluster.head()
+
+#Check user_id with Sarjana
+df_cluster[df_cluster['education']=='Sarjana']
+
+df_cluster.info()
+
+## **Encoding**
+
+**Change categorical column to number using label encoding (ordinal)**
+
+- Education :<br>
+  SD = 1<br>
+  SMP = 2<br>
+  SMA = 3<br>
+  Sarjana = 4<br>
+  Pasca Sarjana = 5
+
+- Age :<br> 
+  <= 25 = Gen Z<br>
+  more than 25 - <= 41 = Millenials<br>
+  more than 41 - <= 57 = Gen X<br>
+  more than 57 = Boomers
+
+# Define user age category
+def categorize(row):
+  if row['age'] <= 25:
+    return 'Gen Z'
+  elif row['age'] > 25 and row['age'] <= 41:
+    return 'Millenials'
+  elif row['age'] > 41 and row['age'] <= 57:
+    return 'Gen X'
+  elif row['age'] > 57:
+    return 'Boomers'
+
+df_cluster['generation'] = df_cluster.apply(lambda row: categorize(row), axis=1)
+
+df_cluster['generation'].astype('category')
+df_cluster['generation_category'] = 0
+df_cluster['generation_category'][df_cluster['generation']=='Millenials'] = 1
+df_cluster['generation_category'][df_cluster['generation']=='Gen X'] = 2
+df_cluster['generation_category'][df_cluster['generation']=='Boomers'] = 3
+df_cluster[['generation', 'generation_category']].value_counts()
+
+df_cluster
+
+# Change education to category type
+df_edu = df_cluster.copy()
+df_edu['education_category'] = 0
+df_edu['education_category'][df_edu['education']=='SD'] = 1
+df_edu['education_category'][df_edu['education']=='SMP'] = 2
+df_edu['education_category'][df_edu['education']=='SMA'] = 3
+df_edu['education_category'][df_edu['education']=='Sarjana'] = 4
+df_edu['education_category'][df_edu['education']=='Pasca Sarjana'] = 5
+
+df_edu
+
+#Drop education column to get numerical column only
+df_edu.drop(['education','generation'], axis = 1, inplace = True)
+df_edu.head()
+
+## Customer Segmentation
+
+### **Standardize**
+Because the numeric column have different scale, we need to scale it so all numeric feature have same importance
+
+#Standardize data
+scaler = MinMaxScaler()
+df_cleaned = df_edu.set_index('user_id')
+df_cleaned = scaler.fit_transform(df_cleaned)
+df_cleaned
+
+### **Elbow Method**
+
+# Elbow method
+distortions = []
+K = range(2,11)
+for elbow in K:
+    kmeanModel = cluster.KMeans(n_clusters=elbow)
+    kmeanModel.fit(df_edu)
+    distortions.append(kmeanModel.inertia_)
+
+plt.figure(figsize=(16,8))
+plt.plot(K, distortions, 'bx-')
+plt.xlabel('k')
+plt.ylabel('Inertia')
+plt.title('The Elbow Method showing the optimal k')
+plt.show()
+
+### **Silhouette Analysis**
+
+# Define silhoutte analysis
+
+def silhoutte_analysis(data,cluster=[2,3,4]):
+    X = data.to_numpy()
+
+    range_n_clusters = cluster
+
+    for n_clusters in range_n_clusters:
+        # Create a subplot with 1 row and 2 columns
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig.set_size_inches(18, 7)
+
+        # The 1st subplot is the silhouette plot
+        # The silhouette coefficient can range from -1, 1 but in this example all
+        # lie within [-0.1, 1]
+        ax1.set_xlim([-0.1, 1])
+        # The (n_clusters+1)*10 is for inserting blank space between silhouette
+        # plots of individual clusters, to demarcate them clearly.
+        ax1.set_ylim([0, len(X) + (n_clusters + 1) * 10])
+
+        # Initialize the clusterer with n_clusters value and a random generator
+        # seed of 10 for reproducibility.
+        clusterer = KMeans(n_clusters=n_clusters, random_state=10)
+        cluster_labels = clusterer.fit_predict(X)
+
+        # The silhouette_score gives the average value for all the samples.
+        # This gives a perspective into the density and separation of the formed
+        # clusters
+        silhouette_avg = silhouette_score(X, cluster_labels)
+        print(
+            "For n_clusters =",
+            n_clusters,
+            "The average silhouette_score is :",
+            silhouette_avg,
+        )
+
+        # Compute the silhouette scores for each sample
+        sample_silhouette_values = silhouette_samples(X, cluster_labels)
+
+        y_lower = 10
+        for i in range(n_clusters):
+            # Aggregate the silhouette scores for samples belonging to
+            # cluster i, and sort them
+            ith_cluster_silhouette_values = sample_silhouette_values[cluster_labels == i]
+
+            ith_cluster_silhouette_values.sort()
+
+            size_cluster_i = ith_cluster_silhouette_values.shape[0]
+            y_upper = y_lower + size_cluster_i
+
+            color = cm.nipy_spectral(float(i) / n_clusters)
+            ax1.fill_betweenx(
+                np.arange(y_lower, y_upper),
+                0,
+                ith_cluster_silhouette_values,
+                facecolor=color,
+                edgecolor=color,
+                alpha=0.7,
+            )
+
+            # Label the silhouette plots with their cluster numbers at the middle
+            ax1.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+            # Compute the new y_lower for next plot
+            y_lower = y_upper + 10  # 10 for the 0 samples
+
+        ax1.set_title("The silhouette plot for the various clusters.")
+        ax1.set_xlabel("The silhouette coefficient values")
+        ax1.set_ylabel("Cluster label")
+
+        # The vertical line for average silhouette score of all the values
+        ax1.axvline(x=silhouette_avg, color="red", linestyle="--")
+
+        ax1.set_yticks([])  # Clear the yaxis labels / ticks
+        ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+
+        # 2nd Plot showing the actual clusters formed
+        colors = cm.nipy_spectral(cluster_labels.astype(float) / n_clusters)
+        ax2.scatter(
+            X[:, 0], X[:, 1], marker=".", s=30, lw=0, alpha=0.7, c=colors, edgecolor="k"
+        )
+
+        # Labeling the clusters
+        centers = clusterer.cluster_centers_
+        # Draw white circles at cluster centers
+        ax2.scatter(
+            centers[:, 0],
+            centers[:, 1],
+            marker="o",
+            c="white",
+            alpha=1,
+            s=200,
+            edgecolor="k",
+        )
+
+        for i, c in enumerate(centers):
+            ax2.scatter(c[0], c[1], marker="$%d$" % i, alpha=1, s=50, edgecolor="k")
+
+        ax2.set_title("The visualization of the clustered data.")
+        ax2.set_xlabel("Feature space for the 1st feature")
+        ax2.set_ylabel("Feature space for the 2nd feature")
+
+        plt.suptitle(
+            "Silhouette analysis for KMeans clustering on sample data with n_clusters = %d"
+            % n_clusters,
+            fontsize=14,
+            fontweight="bold",
+        )
+
+    plt.show()
+
+# Silhouette analysis
+silhoutte_analysis(df_edu,list(range(2,11)))
+
+When examining from elbow method, and silhouette analysis, and silhouette score, it can be seen that the more clusters is the better the score. (n=2 has a better cluster).<br>
+As a result, the less clusters we have, the worse our campaign will be. Consequently, the number of clusters with the second highest pivot will be **3**.
+
+### **Create Cluster**
+
+cluster_model = cluster.KMeans(n_clusters=3, random_state=0)
+cluster_label = cluster_model.fit_predict(df_edu)
+df_edu['cluster'] = cluster_label
+df_edu
+
+#Merge data cluster and edu
+df_merge = pd.merge(df_cluster,
+                 df_edu[['user_id','cluster']],
+                 on='user_id')
+df_merge.head()
+
+#Save data
+# df_merge.to_csv('Cust Segment CrediU New.xlsx', index = False)
+df_merge.to_csv("Segment 3 New.csv", index = False)
+
+# Count the number of user id that have the same cluster
+df_merge.groupby(['cluster'])[['user_id']].count()
+
+## **Cluster Interpretation**
+
+#Interpretation Cluster
+df_merge.groupby('cluster')['age', 'income', 'expense', 'ETI_ratio'].agg(['count','mean','median','max','min'])
+
+df_clus0 = df_merge[df_merge['cluster'] == 0]
+
+for a in df_cluster:
+  print('Percentage of',[a])
+  print(df_clus0[a].value_counts(normalize=True))
+  print(' ')
+
+df_ed = df_merge['education'].agg(['mean','max','min'])
+
+print(df_ed)
+
+df_clus1 = df_merge[df_merge['cluster'] == 1]
+
+for a in df_cluster:
+  print('Percentage of',[a])
+  print(df_clus1[a].value_counts(normalize=True))
+  print(' ')
+
+df_ed = df_merge['education'].agg(['mean','max','min'])
+
+print(df_ed)
+
+df_clus2 = df_merge[df_merge['cluster'] == 2]
+
+for a in df_cluster:
+  print('Percentage of',[a])
+  print(df_clus2[a].value_counts(normalize=True))
+  print(' ')
+
+df_ed = df_merge['education'].agg(['mean','max','min'])
+
+print(df_ed)
+
+## **Cluster 0** - Middle Risk
+Characteristic of 0 Cluster is:
+- Total User : 10479 User
+- Age : 42 years old
+- Income : 4.400.000 - 8.950.000 (median income = 6.250.000)
+- Expense : 1.200.000 - 3.900.000 (median expense = 1.900.000)
+- ETI Ratio : 0.17 - 0.55 (median ETI ratio = 0.30)
+- Education : 56% Sarjana, 34% SMA, 10% Pasca Sarjana
+
+## Cluster 1 - High Risk
+Characteristic of 1 Cluster is:
+- Total User : 19682 User
+- Age : 44 years old
+- Income : 1.150.000 - 4.550.000  (median income = 2.650.000)
+- Expense : 700.000 - 2.400.000 (median expense = 1.300.000)
+- ETI Ratio : 0.21 - 1.63 (median ETI ratio = 0.51)
+- Education : 44% SMP, 36% SD, 10% Sarjana, 10% SMA
+
+## Cluster 2 - Low Risk
+Characteristic of 2 Cluster is:
+- Total User : 6715 User
+- Age : 55 years old
+- Income : 8.650.000 - 14.350.000  (median income = 11.450.000)
+- Expense : 1.800.000 - 3.900.000 (median expense = 2.800.000)
+- ETI Ratio : 0.13 - 0.44 (median ETI ratio = 0.25)
+- Education : 55% Pasca Sarjana and 45% Sarjana
